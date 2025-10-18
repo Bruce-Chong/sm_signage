@@ -2,58 +2,133 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Slides → Video (50s)</title>
+  <title>Slides → Video (Reliable Loop)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    html, body { margin: 0; height: 100%; background:#000; }
-    .stage { position: fixed; inset: 0; display: grid; place-items: center; background:#000; }
-    .hidden { display: none; }
-    iframe, video { width: 100vw; height: 100vh; border: 0; object-fit: cover; background:#000; }
+    html, body { margin:0; height:100%; background:#000; }
+    .stage { position:fixed; inset:0; display:grid; place-items:center; background:#000; }
+    .hidden { display:none; }
+    iframe, video { width:100vw; height:100vh; border:0; object-fit:cover; background:#000; }
   </style>
 </head>
 <body>
-  <!-- Stage 1: Your embedded Google Slides -->
+  <!-- Stage 1: Slides -->
   <div id="slidesStage" class="stage">
     <iframe
       id="slidesFrame"
       src="https://docs.google.com/presentation/d/e/2PACX-1vRZVITow9z28ok6mLfy0WHQkMjB7OTUOkkxbHslHLETin6UgO8g8sAmqymW3OJwLN5S59PrSB_PX-Ew/pubembed?start=true&loop=true&delayms=10000"
-      frameborder="0"
-      allowfullscreen="true"
-      mozallowfullscreen="true"
-      webkitallowfullscreen="true"
+      allowfullscreen
     ></iframe>
   </div>
 
-  <!-- Stage 2: Your video -->
+  <!-- Stage 2: Video -->
   <div id="videoStage" class="stage hidden">
-    <video id="promoVideo" playsinline muted preload="auto" autoplay>
+    <video id="promoVideo" playsinline muted preload="auto">
       <source src="assets/fishesSM.mp4" type="video/mp4">
       Your browser does not support the video tag.
     </video>
   </div>
 
   <script>
-    // Show slides for 50 seconds, then switch to video
-    const SLIDESHOW_DURATION_MS = 5 * 10000;
-
+    const SLIDESHOW_DURATION_MS = 50 * 1000; // 50s
     const slidesStage = document.getElementById('slidesStage');
     const videoStage  = document.getElementById('videoStage');
     const videoEl     = document.getElementById('promoVideo');
 
-    function showVideo() {
-      slidesStage.classList.add('hidden');
-      videoStage.classList.remove('hidden');
+    let slideTimer = null;
+    let retryTimer = null;
 
+    function clearTimers() {
+      if (slideTimer) { clearTimeout(slideTimer); slideTimer = null; }
+      if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+    }
+
+    function scheduleSlidesCountdown() {
+      clearTimers();
+      slideTimer = setTimeout(showVideo, SLIDESHOW_DURATION_MS);
+    }
+
+    function showSlides() {
+      // Hide video, show slides
+      videoStage.classList.add('hidden');
+      slidesStage.classList.remove('hidden');
+
+      // Stop & reset video so next play starts clean
+      try {
+        videoEl.pause();
+        videoEl.currentTime = 0;
+        // Force a fresh load to avoid stalled readyState
+        // (keeps same source, just refreshes buffers/decoder)
+        videoEl.load();
+      } catch {}
+
+      scheduleSlidesCountdown();
+    }
+
+    function tryPlayWithRetry(attempt = 1) {
       const p = videoEl.play();
       if (p && typeof p.then === 'function') {
         p.catch(() => {
-          // If autoplay with audio is blocked, keep the video muted or start it with a user click.
-          console.log('Autoplay blocked; ensure video is muted or start via user interaction.');
+          // If not ready yet, wait a bit and retry (up to 5 attempts)
+          if (attempt < 5) {
+            retryTimer = setTimeout(() => tryPlayWithRetry(attempt + 1), 700);
+          } else {
+            // Last resort: reload and try once more
+            videoEl.load();
+            retryTimer = setTimeout(() => tryPlayWithRetry(attempt + 1), 1000);
+          }
         });
       }
     }
 
-    setTimeout(showVideo, SLIDESHOW_DURATION_MS);
+    function showVideo() {
+      clearTimers();
+
+      // Hide slides, show video
+      slidesStage.classList.add('hidden');
+      videoStage.classList.remove('hidden');
+
+      // Always start from the beginning and ensure buffers are primed
+      try {
+        videoEl.pause();
+        videoEl.currentTime = 0;
+        videoEl.load();
+      } catch {}
+
+      // When it is able to play, attempt autoplay (muted enables autoplay)
+      const startPlayback = () => tryPlayWithRetry();
+      if (videoEl.readyState >= 3) {
+        // HAVE_FUTURE_DATA: likely playable already
+        startPlayback();
+      } else {
+        const onCanPlay = () => {
+          videoEl.removeEventListener('canplay', onCanPlay);
+          startPlayback();
+        };
+        videoEl.addEventListener('canplay', onCanPlay, { once: true });
+      }
+    }
+
+    // When video ends, go back to slides and re-arm the 50s timer
+    videoEl.addEventListener('ended', showSlides);
+
+    // If user tabs away and comes back, resync timers/state
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
+        if (slidesStage.classList.contains('hidden')) {
+          // In video; ensure it's playing or restart sequence if it somehow stopped
+          if (videoEl.paused || videoEl.ended) {
+            showVideo();
+          }
+        } else {
+          // In slides; re-arm the countdown
+          scheduleSlidesCountdown();
+        }
+      }
+    });
+
+    // Kick off the cycle with slides visible
+    showSlides();
   </script>
 </body>
 </html>
