@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Slides → Video (Reliable Loop)</title>
+  <title>Slides → Two Videos (Reliable Loop)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     html, body { margin:0; height:100%; background:#000; }
@@ -21,22 +21,29 @@
     ></iframe>
   </div>
 
-  <!-- Stage 2: Video -->
+  <!-- Stage 2: Video(s) -->
   <div id="videoStage" class="stage hidden">
-    <video id="promoVideo" playsinline muted preload="auto">
-      <source src="assets/fishesSM.mp4" type="video/mp4">
-      Your browser does not support the video tag.
-    </video>
+    <!-- We’ll set .src in JS so we can step through a playlist -->
+    <video id="promoVideo" playsinline muted preload="auto"></video>
   </div>
 
   <script>
-    const SLIDESHOW_DURATION_MS = 50 * 1000; // 50s
+    // ====== CONFIG ======
+    const SLIDESHOW_DURATION_MS = 50 * 1000; // 5 slides × 10s each
+    const VIDEO_PLAYLIST = [
+      "assets/fishesSM.mp4",
+      "assets/petridish.mp4"
+    ];
+    // ====================
+
     const slidesStage = document.getElementById('slidesStage');
     const videoStage  = document.getElementById('videoStage');
     const videoEl     = document.getElementById('promoVideo');
 
     let slideTimer = null;
     let retryTimer = null;
+    let playlistIndex = 0;
+    let inVideoSequence = false;
 
     function clearTimers() {
       if (slideTimer) { clearTimeout(slideTimer); slideTimer = null; }
@@ -45,10 +52,13 @@
 
     function scheduleSlidesCountdown() {
       clearTimers();
-      slideTimer = setTimeout(showVideo, SLIDESHOW_DURATION_MS);
+      slideTimer = setTimeout(beginVideoSequence, SLIDESHOW_DURATION_MS);
     }
 
     function showSlides() {
+      inVideoSequence = false;
+      playlistIndex = 0;
+
       // Hide video, show slides
       videoStage.classList.add('hidden');
       slidesStage.classList.remove('hidden');
@@ -56,9 +66,7 @@
       // Stop & reset video so next play starts clean
       try {
         videoEl.pause();
-        videoEl.currentTime = 0;
-        // Force a fresh load to avoid stalled readyState
-        // (keeps same source, just refreshes buffers/decoder)
+        videoEl.removeAttribute('src'); // release decoder/buffers
         videoEl.load();
       } catch {}
 
@@ -69,36 +77,35 @@
       const p = videoEl.play();
       if (p && typeof p.then === 'function') {
         p.catch(() => {
-          // If not ready yet, wait a bit and retry (up to 5 attempts)
           if (attempt < 5) {
             retryTimer = setTimeout(() => tryPlayWithRetry(attempt + 1), 700);
           } else {
-            // Last resort: reload and try once more
-            videoEl.load();
+            // Last resort: reload current src and try again
+            const currentSrc = videoEl.currentSrc || videoEl.src;
+            if (currentSrc) {
+              videoEl.pause();
+              videoEl.load();
+            }
             retryTimer = setTimeout(() => tryPlayWithRetry(attempt + 1), 1000);
           }
         });
       }
     }
 
-    function showVideo() {
-      clearTimers();
-
-      // Hide slides, show video
-      slidesStage.classList.add('hidden');
-      videoStage.classList.remove('hidden');
+    function playVideoAt(index) {
+      const src = VIDEO_PLAYLIST[index];
+      if (!src) { return finishVideoSequence(); }
 
       // Always start from the beginning and ensure buffers are primed
       try {
         videoEl.pause();
         videoEl.currentTime = 0;
+        videoEl.src = src;
         videoEl.load();
       } catch {}
 
-      // When it is able to play, attempt autoplay (muted enables autoplay)
       const startPlayback = () => tryPlayWithRetry();
       if (videoEl.readyState >= 3) {
-        // HAVE_FUTURE_DATA: likely playable already
         startPlayback();
       } else {
         const onCanPlay = () => {
@@ -109,16 +116,55 @@
       }
     }
 
-    // When video ends, go back to slides and re-arm the 50s timer
-    videoEl.addEventListener('ended', showSlides);
+    function beginVideoSequence() {
+      clearTimers();
+      inVideoSequence = true;
+      playlistIndex = 0;
+
+      // Hide slides, show video
+      slidesStage.classList.add('hidden');
+      videoStage.classList.remove('hidden');
+
+      playVideoAt(playlistIndex);
+    }
+
+    function finishVideoSequence() {
+      showSlides();
+    }
+
+    // Handle the end of each video in the playlist
+    videoEl.addEventListener('ended', () => {
+      if (!inVideoSequence) return; // safety
+      playlistIndex += 1;
+      if (playlistIndex < VIDEO_PLAYLIST.length) {
+        playVideoAt(playlistIndex);
+      } else {
+        finishVideoSequence();
+      }
+    });
+
+    // Optional: if a video errors, skip to the next one (or back to slides)
+    videoEl.addEventListener('error', () => {
+      if (!inVideoSequence) return;
+      playlistIndex += 1;
+      if (playlistIndex < VIDEO_PLAYLIST.length) {
+        playVideoAt(playlistIndex);
+      } else {
+        finishVideoSequence();
+      }
+    });
 
     // If user tabs away and comes back, resync timers/state
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) {
         if (slidesStage.classList.contains('hidden')) {
-          // In video; ensure it's playing or restart sequence if it somehow stopped
+          // In video; ensure it’s playing or restart current item
           if (videoEl.paused || videoEl.ended) {
-            showVideo();
+            if (inVideoSequence) {
+              playVideoAt(playlistIndex);
+            } else {
+              beginVideoSequence();
+            }
           }
         } else {
           // In slides; re-arm the countdown
