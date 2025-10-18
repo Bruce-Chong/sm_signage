@@ -2,13 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Slides → Video (50s)</title>
+  <title>Slides → Video (Loop)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     html, body { margin: 0; height: 100%; background:#000; }
-    .stage { position: fixed; inset: 0; display: grid; place-items: center; background:#000; }
-    .hidden { display: none; }
-    iframe, video { width: 100vw; height: 100vh; border: 0; object-fit: cover; background:#000; }
+    .stage { position: fixed; inset: 0; display:grid; place-items:center; background:#000; }
+    .hidden { display:none; }
+    iframe, video { width:100vw; height:100vh; border:0; object-fit:cover; background:#000; }
   </style>
 </head>
 <body>
@@ -26,34 +26,80 @@
 
   <!-- Stage 2: Your video -->
   <div id="videoStage" class="stage hidden">
-    <video id="promoVideo" playsinline muted preload="auto" autoplay>
-      <source src="assets/fishesSM.mp4" type="video/mp4">
+    <video id="promoVideo" playsinline muted preload="auto">
+      <source src="assets/fishes-SM.mp4" type="video/mp4">
       Your browser does not support the video tag.
     </video>
   </div>
 
   <script>
-    // Show slides for 50 seconds, then switch to video
-    const SLIDESHOW_DURATION_MS = 50 * 1000;
+    // ====== CONFIG ======
+    const SLIDESHOW_DURATION_MS = 50 * 1000; // 50 seconds
+    const VIDEO_AUTOPLAY_MUTED = true;       // browsers allow autoplay when muted
 
+    // ====== ELEMENTS ======
     const slidesStage = document.getElementById('slidesStage');
     const videoStage  = document.getElementById('videoStage');
     const videoEl     = document.getElementById('promoVideo');
 
+    // Ensure autoplay behavior matches config
+    if (VIDEO_AUTOPLAY_MUTED) {
+      videoEl.muted = true;
+      videoEl.setAttribute('autoplay', '');
+    } else {
+      videoEl.muted = false;
+      videoEl.removeAttribute('autoplay'); // user interaction required for audio
+    }
+
+    let slideTimer = null;
+
+    function showSlides() {
+      // Hide video, show slides
+      videoStage.classList.add('hidden');
+      slidesStage.classList.remove('hidden');
+
+      // Stop video if it was playing
+      try { videoEl.pause(); videoEl.currentTime = 0; } catch {}
+
+      // After 50s, switch to video
+      clearTimeout(slideTimer);
+      slideTimer = setTimeout(showVideo, SLIDESHOW_DURATION_MS);
+    }
+
     function showVideo() {
+      // Hide slides, show video
       slidesStage.classList.add('hidden');
       videoStage.classList.remove('hidden');
 
+      // Try to play the video
       const p = videoEl.play();
       if (p && typeof p.then === 'function') {
         p.catch(() => {
-          // If autoplay with audio is blocked, keep the video muted or start it with a user click.
+          // If autoplay with sound is blocked, keep it muted or let user tap to start
           console.log('Autoplay blocked; ensure video is muted or start via user interaction.');
         });
       }
     }
 
-    setTimeout(showVideo, SLIDESHOW_DURATION_MS);
+    // When the video ends, loop back to slides
+    videoEl.addEventListener('ended', showSlides);
+
+    // Kick things off with slides
+    showSlides();
+
+    // (Optional) If the tab becomes hidden and returns, resync by restarting the loop
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
+        // Re-sync the timer on return to tab
+        if (slidesStage.classList.contains('hidden')) {
+          // currently in video; do nothing and let it finish
+        } else {
+          // currently in slides; restart the slide timer
+          clearTimeout(slideTimer);
+          slideTimer = setTimeout(showVideo, SLIDESHOW_DURATION_MS);
+        }
+      }
+    });
   </script>
 </body>
 </html>
