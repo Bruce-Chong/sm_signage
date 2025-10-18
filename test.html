@@ -12,11 +12,11 @@
   </style>
 </head>
 <body>
-  <!-- Stage 1: Slides -->
+  <!-- Stage 1: Google Slides (embed, no internal loop) -->
   <div id="slidesStage" class="stage">
     <iframe
       id="slidesFrame"
-      src="https://docs.google.com/presentation/d/e/2PACX-1vRZVITow9z28ok6mLfy0WHQkMjB7OTUOkkxbHslHLETin6UgO8g8sAmqymW3OJwLN5S59PrSB_PX-Ew/pubembed?start=true&loop=true&delayms=10000"
+      src="https://docs.google.com/presentation/d/e/2PACX-1vRZVITow9z28ok6mLfy0WHQkMjB7OTUOkkxbHslHLETin6UgO8g8sAmqymW3OJwLN5S59PrSB_PX-Ew/pubembed?start=true&loop=false&delayms=10000"
       allowfullscreen
     ></iframe>
   </div>
@@ -30,17 +30,32 @@
   </div>
 
   <script>
-    const SLIDESHOW_DURATION_MS = 50 * 1000; // 50s
+    // ------- CONFIGURE THESE -------
+    const SLIDE_COUNT = 5;                // number of slides
+    const PER_SLIDE_MS = 10000;           // matches delayms=10000 (10s per slide)
+    const TRANSITION_BUFFER_MS = 1000;    // small safety margin for slide transitions
+    const SLIDESHOW_DURATION_MS = SLIDE_COUNT * PER_SLIDE_MS + TRANSITION_BUFFER_MS;
+    // --------------------------------
+
     const slidesStage = document.getElementById('slidesStage');
     const videoStage  = document.getElementById('videoStage');
     const videoEl     = document.getElementById('promoVideo');
+    const iframe      = document.getElementById('slidesFrame');
 
     let slideTimer = null;
     let retryTimer = null;
 
+    const baseSlidesSrc = iframe.src.replace(/([?&])cacheBust=\d+/, '');
+
     function clearTimers() {
       if (slideTimer) { clearTimeout(slideTimer); slideTimer = null; }
       if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+    }
+
+    function resetSlidesToStart() {
+      // Reload the deck to slide 1 every cycle to prevent drift while hidden
+      const sep = baseSlidesSrc.includes('?') ? '&' : '?';
+      iframe.src = baseSlidesSrc + sep + 'cacheBust=' + Date.now();
     }
 
     function scheduleSlidesCountdown() {
@@ -49,7 +64,7 @@
     }
 
     function showSlides() {
-      // Hide video, show slides
+      // Show slides, hide video
       videoStage.classList.add('hidden');
       slidesStage.classList.remove('hidden');
 
@@ -57,11 +72,13 @@
       try {
         videoEl.pause();
         videoEl.currentTime = 0;
-        // Force a fresh load to avoid stalled readyState
-        // (keeps same source, just refreshes buffers/decoder)
         videoEl.load();
       } catch {}
 
+      // Always restart the slideshow from slide 1
+      resetSlidesToStart();
+
+      // Arm the countdown for one full pass of the deck
       scheduleSlidesCountdown();
     }
 
@@ -69,11 +86,10 @@
       const p = videoEl.play();
       if (p && typeof p.then === 'function') {
         p.catch(() => {
-          // If not ready yet, wait a bit and retry (up to 5 attempts)
+          // Retry a few times in case the video isn't fully ready yet
           if (attempt < 5) {
             retryTimer = setTimeout(() => tryPlayWithRetry(attempt + 1), 700);
           } else {
-            // Last resort: reload and try once more
             videoEl.load();
             retryTimer = setTimeout(() => tryPlayWithRetry(attempt + 1), 1000);
           }
@@ -88,46 +104,41 @@
       slidesStage.classList.add('hidden');
       videoStage.classList.remove('hidden');
 
-      // Always start from the beginning and ensure buffers are primed
+      // Ensure video starts from the beginning and buffers are primed
       try {
         videoEl.pause();
         videoEl.currentTime = 0;
         videoEl.load();
       } catch {}
 
-      // When it is able to play, attempt autoplay (muted enables autoplay)
-      const startPlayback = () => tryPlayWithRetry();
       if (videoEl.readyState >= 3) {
-        // HAVE_FUTURE_DATA: likely playable already
-        startPlayback();
+        tryPlayWithRetry();
       } else {
         const onCanPlay = () => {
           videoEl.removeEventListener('canplay', onCanPlay);
-          startPlayback();
+          tryPlayWithRetry();
         };
         videoEl.addEventListener('canplay', onCanPlay, { once: true });
       }
     }
 
-    // When video ends, go back to slides and re-arm the 50s timer
+    // After your ~22s video finishes, return to slides and repeat
     videoEl.addEventListener('ended', showSlides);
 
-    // If user tabs away and comes back, resync timers/state
+    // Optional: if tab becomes visible again, resync the loop
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) {
         if (slidesStage.classList.contains('hidden')) {
-          // In video; ensure it's playing or restart sequence if it somehow stopped
-          if (videoEl.paused || videoEl.ended) {
-            showVideo();
-          }
+          // In video; make sure it's progressing/playing
+          if (videoEl.paused || videoEl.ended) showVideo();
         } else {
-          // In slides; re-arm the countdown
+          // In slides; re-arm countdown
           scheduleSlidesCountdown();
         }
       }
     });
 
-    // Kick off the cycle with slides visible
+    // Kick off with slides
     showSlides();
   </script>
 </body>
