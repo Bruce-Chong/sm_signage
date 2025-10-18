@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Slides → Video (50s)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    html, body { margin: 0; height: 100%; background:#000; }
+    .stage { position: fixed; inset: 0; display: grid; place-items: center; background:#000; }
+    .hidden { display: none; }
+    iframe, video { width: 100vw; height: 100vh; border: 0; object-fit: cover; background:#000; }
+  </style>
+</head>
+<body>
+  <!-- Stage 1: Your embedded Google Slides -->
+  <div id="slidesStage" class="stage">
+    <iframe
+      id="slidesFrame"
+      src="https://docs.google.com/presentation/d/e/2PACX-1vRZVITow9z28ok6mLfy0WHQkMjB7OTUOkkxbHslHLETin6UgO8g8sAmqymW3OJwLN5S59PrSB_PX-Ew/pubembed?start=true&loop=true&delayms=10000"
+      frameborder="0"
+      allowfullscreen="true"
+      mozallowfullscreen="true"
+      webkitallowfullscreen="true"
+    ></iframe>
+  </div>
+
+  <!-- Stage 2: Your video -->
+  <div id="videoStage" class="stage hidden">
+    <video id="promoVideo" playsinline muted preload="auto" autoplay>
+      <source src="assets/fishesSM.mp4" type="video/mp4">
+      Your browser does not support the video tag.
+    </video>
+  </div>
+
+  <script>
+    // Show slides for 50 seconds, then switch to video
+    const SLIDESHOW_DURATION_MS = 50 * 1000;
+
+    const slidesStage = document.getElementById('slidesStage');
+    const videoStage  = document.getElementById('videoStage');
+    const videoEl     = document.getElementById('promoVideo');
+
+    function showVideo() {
+      slidesStage.classList.add('hidden');
+      videoStage.classList.remove('hidden');
+
+      const p = videoEl.play();
+      if (p && typeof p.then === 'function') {
+        p.catch(() => {
+          // If autoplay with audio is blocked, keep the video muted or start it with a user click.
+          console.log('Autoplay blocked; ensure video is muted or start via user interaction.');
+        });
+      }
+    }
+
+    setTimeout(showVideo, SLIDESHOW_DURATION_MS);
+  </script>
+</body>
+</html>
